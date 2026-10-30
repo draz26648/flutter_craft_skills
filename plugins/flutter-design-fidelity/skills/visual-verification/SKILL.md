@@ -1,6 +1,6 @@
 ---
 name: visual-verification
-description: Closes the feedback loop on UI work by building the screen, capturing a screenshot, diffing it against the reference design export, and iterating until the difference falls under threshold. Use this after implementing or modifying any screen or widget from a design, whenever asked whether something matches the design, and before declaring any UI task complete. Trigger it proactively at the end of UI work rather than waiting to be asked, because generated UI that compiles is not the same as UI that matches, and without this loop the first render is treated as the final one.
+description: "Capture and compare Flutter UI against a supplied reference after substantial visual changes or an explicit fidelity check. Report missing capture inputs honestly."
 ---
 
 # Visual Verification
@@ -8,6 +8,16 @@ description: Closes the feedback loop on UI work by building the screen, capturi
 An agent with no feedback loop declares a screen finished the moment it compiles. That
 is the single largest source of "looks roughly right but is wrong" UI. This skill
 supplies the loop.
+
+## Scope and prerequisites
+
+Use this for substantial visual implementation or an explicit fidelity check. Small
+nonvisual edits need the relevant existing tests, not a new screenshot pipeline. Confirm
+a reference export and capture environment exist. If either is missing, report NOT
+VERIFIED with the missing input, continue applicable tests, and do not claim a match.
+
+Read `references/capture-workflow.md` when preparing capture. A portable host-test helper
+is provided at `references/capture_harness.dart`; reuse existing project helpers first.
 
 ## The loop
 
@@ -26,7 +36,7 @@ design that was updated after the export.
 
 ```bash
 # Capture the current implementation
-flutter test integration_test/screenshot_test.dart --dart-define=CAPTURE=true
+flutter test test/capture_test.dart  # create/adapt using the capture workflow first
 
 # Diff against the reference
 python3 "<skill-directory>/scripts/compare.py" \
@@ -49,7 +59,9 @@ algorithm.
 First run only, install its dependencies:
 
 ```bash
-pip install pillow numpy
+python3 -m venv /tmp/flutter-visual-check
+/tmp/flutter-visual-check/bin/pip install pillow numpy
+# Use /tmp/flutter-visual-check/bin/python for compare.py
 ```
 
 Exit codes: `0` match, `1` difference above threshold, `2` could not run — a missing file,

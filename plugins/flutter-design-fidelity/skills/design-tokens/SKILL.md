@@ -1,27 +1,28 @@
 ---
 name: design-tokens
-description: Enforces that every color, spacing value, radius, shadow, duration, and text style in Flutter widget code resolves through the AppTokens ThemeExtension instead of being hardcoded. Use this whenever implementing a screen or widget from a design, adding or changing any visual value, translating a Figma frame, reviewing UI code, or touching the theme. Trigger it even when the request does not mention tokens or theming — any task that produces widget code with visual values needs this skill, because hardcoded values are invisible in review and are the primary cause of design drift.
+description: "Resolve Flutter visual values through the project’s existing theme, constants, or token extension. Honor projects with no token layer."
 ---
 
 # Design Tokens
 
 > **Profile first.** Read `.agents/flutter-profile.yaml` in the project root, falling
 > back to legacy `.claude/flutter-profile.yaml`. `tokens`
-> decides whether this skill applies at all: `theme_extension` (the default, everything
-> below holds), `theme_only` — resolve through `Theme.of(context)` and its `ColorScheme`
+> decides whether this skill applies at all: `theme_extension` (use the existing extension API), `theme_only` — resolve through `Theme.of(context)` and its `ColorScheme`
 > and `TextTheme` instead of `context.tokens`, `constants` — resolve through the project's
 > constants class, or `none` — the project has no token layer and hardcoded values are not
-> a finding. Under `none`, say once that a token layer would help and then stop asking.
+> a finding. Under `none`, do not ask the user to introduce a token layer.
 > Field list: `references/flutter-profile.md`.
 
-Widget code describes structure. It never contains raw visual values. Every color,
-spacing unit, radius, shadow, duration, and text style resolves through the token
-extension, because a hardcoded value looks identical to a correct value in code review
-and is therefore never caught.
+With a configured token layer, widget code describes structure and resolves visual
+values through that source. Missing profile fields require discovery first. Every color,
+spacing unit, radius, shadow, duration, and text style should follow that configured
+source. For theme_only values without a ThemeData equivalent, preserve the existing
+layout constants or local conventions rather than inventing a ThemeExtension.
 
-## Hard rules
+## With a token-backed design system
 
-Never write these in widget code:
+Move the following visual literals to the existing token source when that source
+represents the concept. These restrictions do not apply under tokens: none:
 
 - `Color(0xFF...)`, `Colors.blue`, or any literal color
 - `EdgeInsets.all(16)` or any numeric padding, margin, or gap
@@ -46,13 +47,15 @@ Container(
 
 ## When a token does not exist
 
-Add it to the token file first, then use it. Never inline a one-off "just this once"
-value. One inlined value becomes five within a month, and at that point the token system
-is decorative.
+First look for an equivalent semantic token. If a new design concept is intentional,
+add a semantic token even if its first use is on one screen. Avoid numeric aliases that
+merely disguise a literal. Under tokens: none, inline values are allowed; under theme_only
+or constants, extend the existing source only where it makes sense.
 
 If a design uses a value that does not fit the existing scale — 14px spacing where the
-scale is 4/8/12/16 — do not add a `space.s14` token. Stop and report it. It is almost
-always a mistake in the design file, and silently encoding it makes the scale meaningless.
+scale is 4/8/12/16 — do not add a `space.s14` token. Report the mismatch and check whether it is an intentional optical adjustment. Follow
+explicit design intent; ask only if choosing a value would materially change the result.
+Continue independent work while that decision is unresolved.
 
 ## Naming convention
 
@@ -74,25 +77,25 @@ brand changes is the exact cost this convention exists to avoid.
 
 1. Pull the frame. Enumerate every distinct visual value it uses.
 2. Match each value against the existing token set.
-3. Report unmatched values before writing any widget code. Do not begin implementation
-   with unresolved values, because the resolution is guessing and the guess ships.
-4. Implement using `context.tokens` only.
+3. Report uncertain values and their evidence; resolve material ambiguity without
+   blocking unrelated implementation.
+4. Implement through the configured source and actual project API.
 
 ## Dark mode
 
 Tokens are defined per theme, resolved at call time. A widget that reads
 `context.tokens.color.surfaceRaised` works in both themes with no conditional logic.
-Any `Theme.of(context).brightness == Brightness.dark` check inside a widget means a
-token is missing.
+Repeated brightness-dependent visual values suggest a missing semantic token; theme
+checks for genuinely different behavior are not automatically wrong.
 
 ## Common mistakes
 
 - Reading tokens once into a local variable outside `build()`. Tokens must resolve per
   build or theme switching silently stops working.
-- Using `Theme.of(context).colorScheme.primary` directly. Go through the extension so
-  there is exactly one lookup path.
-- Adding a token for a value used once. Tokens are a shared vocabulary; a single-use
-  token is a hardcoded value with extra steps.
+- Introducing AppTokens when the project uses a differently named extension.
+- Duplicating a Material ColorScheme role in an extension without a project convention
+  requiring it. Theme lookups remain valid.
+- Adding numeric aliases instead of meaningful semantic tokens.
 
 See `references/theme-extension-template.dart` for the token class structure to follow
 when setting this up in a project that does not have one yet.

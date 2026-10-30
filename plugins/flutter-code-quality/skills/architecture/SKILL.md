@@ -1,19 +1,20 @@
 ---
 name: architecture
-description: The layering rules for this Flutter codebase — a pure Dart domain layer with no Flutter imports, the project's state holder (Cubit, Bloc, Notifier, or whatever the profile names) as the only bridge to presentation, repositories behind interfaces, and the feature-first or layer-first structure the profile declares. Use this whenever creating a new feature, adding any new file, deciding where code belongs, refactoring, or answering any question about project structure. Trigger it before writing the first file of any new feature, because a file placed in the wrong layer is far more expensive to move later than to place correctly now.
+description: "Place or refactor Flutter feature code using the project’s existing architecture and dependency boundaries. Use for structural changes, not every new file."
 ---
 
 # Architecture
 
 > **Profile first.** Read `.agents/flutter-profile.yaml` in the project root before
 > placing any file. This skill is governed by `structure`, `state`, and `di`. With no
-> profile, assume `structure: feature_first`, `state: bloc`, `di: get_it` — the layout
-> below. Under `structure: layer_first` the layers are top-level directories and features
+> profile, discover the architecture and stack from source before using the example
+> below. The example is not a migration target. Under `structure: layer_first` the layers are top-level directories and features
 > are subdirectories inside them; the rules about which direction dependencies point are
 > unchanged. If the `.agents` profile is absent, check legacy
 > `.claude/flutter-profile.yaml`. Field list: `references/flutter-profile.md`.
 
-Feature-first, three layers per feature. The rules exist to keep business logic testable
+The following feature-first example fits layered projects. Preserve simpler or custom
+architectures when that is what the project uses. The rules exist to keep business logic testable
 without a Flutter binding and swappable without touching the UI.
 
 ## Structure
@@ -44,8 +45,8 @@ lib/
 ## The rules and why
 
 **Domain imports nothing from Flutter.** Not `material.dart`, not `widgets.dart`, not
-even for `Color` or `IconData`. The moment domain depends on Flutter it needs a binding
-to test, and unit tests slow from milliseconds to seconds. If domain needs to express a
+even for `Color` or `IconData`. Keeping domain independent of Flutter lets its tests run as ordinary Dart tests and
+avoids unnecessary widget/runtime coupling. If domain needs to express a
 visual concept, it returns an enum and presentation maps it.
 
 **Dependencies point inward.** Presentation knows domain. Data knows domain. Domain
@@ -58,9 +59,9 @@ the interface, which is what makes it testable with a mock instead of a live API
 **No `BuildContext` below presentation.** A use case taking a context has bound business
 logic to the widget tree.
 
-**Entities and models are separate.** The API's shape is not the app's shape. Models
-handle JSON and live in data; entities express the domain and have no serialization code.
-When the backend renames a field, exactly one file changes.
+**Separate entities and DTOs when their shapes or responsibilities differ.** Preserve
+existing simple models when a second type would only duplicate fields. Keep transport
+conversion at the data boundary.
 
 ## Where things go
 

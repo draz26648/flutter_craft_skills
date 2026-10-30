@@ -4,7 +4,7 @@
 #
 # Reads .agents/flutter-profile.yaml if present, with a legacy .claude fallback, so the
 # conventions it enforces are the ones the project actually holds. With no profile it
-# behaves exactly as it did before the profile existed.
+# runs convention checks as advisory until the project declares its intent.
 #
 # Written for bash 3.2 (the version macOS ships) — no mapfile, no associative arrays.
 #
@@ -13,12 +13,15 @@
 #   1  at least one blocking finding
 #   2  the gate could not run — missing tooling, wrong directory, bad profile, broken check
 #
-# Usage: bash check.sh [--skip-tests] [--all] [--profile PATH]
+# Usage: bash check.sh [--skip-tests] [--all] [--base REF] [--profile PATH]
 
 set -uo pipefail
 
 SKIP_TESTS=false
 FORCE_ALL=false
+BASE_REF=""
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOLS_DIR="${FLUTTER_GATE_TOOLS:-$SCRIPT_DIR}"
 PROFILE_PATH=""
 PROFILE_EXPLICIT=false
 LEGACY_PROFILE_IGNORED=false
@@ -27,6 +30,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --skip-tests) SKIP_TESTS=true; shift ;;
     --all)        FORCE_ALL=true; shift ;;
+    --base) case "${2:-}" in ''|-*) printf 'gate: --base needs a ref\n' >&2; exit 2 ;; esac; BASE_REF="$2"; shift 2 ;;
     --profile)    PROFILE_PATH="${2:-}"; PROFILE_EXPLICIT=true; [ -n "$PROFILE_PATH" ] || { printf 'gate: --profile needs a path\n' >&2; exit 2; }; shift 2 ;;
     -h|--help)    sed -n '2,16p' "$0"; exit 0 ;;
     *) printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
@@ -69,70 +73,33 @@ command -v dart    >/dev/null 2>&1 || die "dart is not on PATH"
 [ -f pubspec.yaml ] || die "no pubspec.yaml here — run this from the project root, not from the skill directory"
 
 # ---------------------------------------------------------------- profile
-#
-# Defaults are the conventions the gate enforced before the profile existed, so a project
-# with no project profile sees exactly the behaviour it saw before.
-#
-# An unrecognised value is fatal rather than ignored. Treating `riverpood` as the default
-# would enforce the opposite of what the project asked for, with nothing in the output to
-# say so.
-
-P_TOKENS=theme_extension
-P_L10N=arb
-P_STRICTNESS=block
-P_LOCALES=""
+command -v python3 >/dev/null 2>&1 || die "python3 is not on PATH"
+DART_TOOLS="$TOOLS_DIR/dart_checks"
+[ -f "$DART_TOOLS/.dart_tool/package_config.json" ] || die "prepare gate tools first: bash \"$TOOLS_DIR/prepare.sh\""
+[ "$PROFILE_EXPLICIT" = false ] || [ -f "$PROFILE_PATH" ] || die "profile: $PROFILE_PATH does not exist"
+DART_ENTRY="$DART_TOOLS/bin/check.dart"
+if [ -f "$DART_TOOLS/.dart_tool/check.dill" ] && [ -f "$DART_TOOLS/.dart_tool/sdk-version" ] \
+   && [ "$(dart --version)" = "$(cat "$DART_TOOLS/.dart_tool/sdk-version")" ] \
+   && [ -z "$(find "$DART_TOOLS/lib" "$DART_TOOLS/bin" "$DART_TOOLS/pubspec.yaml" "$DART_TOOLS/pubspec.lock" -type f -newer "$DART_TOOLS/.dart_tool/check.dill" -print)" ]; then
+  DART_ENTRY="$DART_TOOLS/.dart_tool/check.dill"
+fi
+PROFILE_VALUES=$(dart "$DART_ENTRY" profile "$PROFILE_PATH") || die "invalid profile or unavailable parser"
+P_TOKENS=$(printf '%s\n' "$PROFILE_VALUES" | sed -n '1p')
+P_L10N=$(printf '%s\n' "$PROFILE_VALUES" | sed -n '2p')
+P_STRICTNESS=$(printf '%s\n' "$PROFILE_VALUES" | sed -n '3p')
+P_LOCALES=$(printf '%s\n' "$PROFILE_VALUES" | sed -n '4p')
 LOCALES_DECLARED=false
-PROFILE_LABEL="defaults (no $PROFILE_PATH)"
-
-# An explicit --profile that does not exist is a typo, not a request for the defaults.
-# Falling back would apply conventions the project never asked for and exit 0 on them.
-if [ "$PROFILE_EXPLICIT" = true ] && [ ! -f "$PROFILE_PATH" ]; then
-  die "profile: $PROFILE_PATH does not exist"
-fi
-
-# Two profiles that disagree are resolved silently by lookup order, so say which one lost.
+case "$P_LOCALES" in
+  declared*) LOCALES_DECLARED=true; P_LOCALES=" ${P_LOCALES#declared} " ;;
+esac
+PROFILE_LABEL="advisory discovery (no $PROFILE_PATH)"
+[ ! -f "$PROFILE_PATH" ] || PROFILE_LABEL="$PROFILE_PATH (tokens: $P_TOKENS, l10n: $P_L10N, strictness: $P_STRICTNESS)"
 if [ "$LEGACY_PROFILE_IGNORED" = true ]; then
-  note ".claude/flutter-profile.yaml is ignored because .agents/flutter-profile.yaml exists — delete one so they cannot disagree"
+  note ".claude/flutter-profile.yaml is ignored because .agents/flutter-profile.yaml exists"
 fi
-
-# Flat `key: value` only, with `#` comments stripped. Deliberately not a YAML parser: the
-# profile is nine scalar fields and one inline list, and a dependency on PyYAML would put
-# the gate behind a pip install.
-profile_get() {
-  sed -n "s/^[[:space:]]*$1:[[:space:]]*\([^#]*\).*\$/\1/p" "$PROFILE_PATH" 2>/dev/null \
-    | head -1 | sed 's/[[:space:]]*$//'
-}
-
-require_value() { # require_value <field> <value> <allowed...>
-  case " $3 " in
-    *" $2 "*) return 0 ;;
-  esac
-  die "profile: $1: '$2' is not a recognised value. Expected one of: $3"
-}
-
-if [ -f "$PROFILE_PATH" ]; then
-  v=$(profile_get tokens);     [ -n "$v" ] && P_TOKENS="$v"
-  v=$(profile_get l10n);       [ -n "$v" ] && P_L10N="$v"
-  v=$(profile_get strictness); [ -n "$v" ] && P_STRICTNESS="$v"
-
-  # locales: [en, ar]  ->  " en ar "
-  v=$(profile_get locales)
-  if [ -n "$v" ]; then
-    LOCALES_DECLARED=true
-    P_LOCALES=" $(printf '%s' "$v" | tr -d '[]"'"'" | tr ',' ' ' | tr -s ' ') "
-  fi
-
-  require_value tokens     "$P_TOKENS"     "theme_extension theme_only constants none"
-  require_value l10n       "$P_L10N"       "arb easy_localization slang none"
-  require_value strictness "$P_STRICTNESS" "block warn"
-
-  PROFILE_LABEL="$PROFILE_PATH (tokens: $P_TOKENS, l10n: $P_L10N, strictness: $P_STRICTNESS"
-  if [ "$LOCALES_DECLARED" = true ]; then
-    PROFILE_LABEL="$PROFILE_LABEL, locales:$P_LOCALES)"
-  else
-    PROFILE_LABEL="$PROFILE_LABEL, locales: not declared)"
-  fi
-fi
+[ "$P_TOKENS" != unknown ] || note "tokens not declared — inspect the existing theme; literal checks are advisory"
+[ "$P_L10N" != unknown ] || note "l10n not declared — inspect existing localization; strings are advisory"
+[ "$LOCALES_DECLARED" = true ] || note "locales not declared — RTL checks are advisory"
 
 # strictness: warn downgrades house-style findings only. Formatting, static analysis,
 # failing tests and committed credentials block under every profile — a project that
@@ -147,7 +114,7 @@ sev() {
 
 case "$P_TOKENS" in
   theme_extension)      TOKEN_SEV=$(sev block) ;;
-  theme_only|constants) TOKEN_SEV=warn ;;
+  theme_only|constants|unknown) TOKEN_SEV=warn ;;
   none)                 TOKEN_SEV="skip:profile says tokens: none" ;;
 esac
 
@@ -164,13 +131,11 @@ else
   STRING_SEV=warn
 fi
 
-# An undeclared `locales` keeps the RTL check blocking. The gate cannot tell whether the
-# project ships an RTL language, and the safe assumption is that it might — so the
-# downgrade needs the project to say so explicitly.
-RTL_SEV=$(sev block)
+# Only explicitly declared RTL locales and strictness block promote this convention.
+RTL_SEV=warn
 if [ "$LOCALES_DECLARED" = true ]; then
   case "$P_LOCALES" in
-    *" ar "*|*" he "*|*" fa "*|*" ur "*|*" ps "*|*" sd "*|*" ug "*|*" dv "*|*" yi "*) ;;
+    *" ar "*|*" he "*|*" fa "*|*" ur "*|*" ps "*|*" sd "*|*" ug "*|*" dv "*|*" yi "*) RTL_SEV=$(sev block) ;;
     *) RTL_SEV=warn ;;
   esac
 fi
@@ -178,31 +143,21 @@ fi
 # ---------------------------------------------------------------- scope
 
 FILES=()
-SCOPE_LABEL=""
-
-if [ "$FORCE_ALL" = false ] && git rev-parse --git-dir >/dev/null 2>&1 \
-   && git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-  while IFS= read -r f; do
-    case "$f" in
-      *.dart) [ -f "$f" ] && FILES[${#FILES[@]}]="$f" ;;
-    esac
-  done < <(git diff --name-only --diff-filter=ACM HEAD 2>/dev/null)
+SCOPE_FILE=$(mktemp) || die "mktemp failed"
+if ! python3 "$TOOLS_DIR/scope.py" "$FORCE_ALL" "$BASE_REF" >"$SCOPE_FILE"; then
+  rm -f "$SCOPE_FILE"; die "could not determine changed files"
 fi
-
+while IFS= read -r -d '' f; do
+  FILES[${#FILES[@]}]="$f"
+done <"$SCOPE_FILE"
+rm -f "$SCOPE_FILE"
+SCOPE_LABEL="${#FILES[@]} changed Dart file(s) vs ${BASE_REF:-HEAD}, including untracked"
+[ "$FORCE_ALL" = false ] || SCOPE_LABEL="all of lib/ and test/ (--all)"
 if [ ${#FILES[@]} -eq 0 ]; then
-  while IFS= read -r f; do
-    FILES[${#FILES[@]}]="$f"
-  done < <(find lib test -name '*.dart' -type f 2>/dev/null)
-  if [ "$FORCE_ALL" = true ]; then
-    SCOPE_LABEL="all of lib/ and test/ (--all)"
-  else
-    SCOPE_LABEL="all of lib/ and test/ (nothing changed against HEAD)"
-  fi
-else
-  SCOPE_LABEL="${#FILES[@]} changed Dart file(s) vs HEAD"
+  note "no changed Dart files; convention scan empty (analysis and tests still run)"
 fi
 
-[ ${#FILES[@]} -gt 0 ] || die "found no Dart files to audit under lib/ or test/"
+
 
 printf 'Scope: %s\n' "$SCOPE_LABEL"
 printf 'Profile: %s\n' "$PROFILE_LABEL"
@@ -216,8 +171,6 @@ EX_GENERATED='\.(g|freezed|mocks|config|gr|pb|pbenum|pbjson)\.dart:'
 EX_TEST='(^|/)(test|integration_test)/|_test\.dart:'
 # The token/theme layer is the one place literal colors and numbers belong. Without
 # this carve-out the gate fails on correct code, and a gate that cries wolf is ignored.
-EX_THEME='(^|/)(theme|themes|tokens|design_system)/|app_(colors|theme|tokens|typography|spacing|elevation)\.dart:'
-EX_L10N='(^|/)(l10n|generated|intl)/'
 # Path-only form, for checks that work on transformed lines rather than grep output.
 EX_GENERATED_FILE='\.(g|freezed|mocks|config|gr|pb|pbenum|pbjson)\.dart$'
 
@@ -241,34 +194,33 @@ check_pattern() {
   local hits status errfile
 
   if [ -z "$sample" ]; then
-    fail "check '$label' is broken: no self-test sample was declared for it"
-    return
+    die "check '$label' is broken: no self-test sample was declared for it"
   fi
   if ! printf '%s\n' "$sample" | grep -qE -- "$pattern" 2>/dev/null; then
-    fail "check '$label' is broken: its pattern does not match its own test sample"
-    return
+    die "check '$label' is broken: its pattern does not match its own test sample"
   fi
 
   case "$severity" in
     skip:*) skipped "$label" "${severity#skip:}"; return ;;
   esac
 
+  if [ ${#FILES[@]} -eq 0 ]; then pass "$label (empty scope)"; return; fi
   errfile=$(mktemp) || die "mktemp failed"
   hits=$(grep -HnE -- "$pattern" "${FILES[@]}" 2>"$errfile")
   status=$?
 
   if [ "$status" -ge 2 ]; then
-    fail "check '$label' is broken: $(tr '\n' ' ' <"$errfile")"
+    local diagnostic
+    diagnostic=$(tr '\n' ' ' <"$errfile")
     rm -f "$errfile"
-    return
+    die "check '$label' is broken: $diagnostic"
   fi
   rm -f "$errfile"
 
   if [ -n "$exclude" ] && [ -n "$hits" ]; then
     hits=$(printf '%s\n' "$hits" | grep -vE -- "$exclude")
     if [ $? -ge 2 ]; then
-      fail "check '$label' exclusion filter is malformed"
-      return
+      die "check '$label' exclusion filter is malformed"
     fi
   fi
 
@@ -290,7 +242,7 @@ check_pattern() {
 # ---------------------------------------------------------------- formatting
 
 section "Formatting"
-if dart format --set-exit-if-changed --output=none "${FILES[@]}" >/dev/null 2>&1; then
+if [ ${#FILES[@]} -eq 0 ] || dart format --set-exit-if-changed --output=none "${FILES[@]}" >/dev/null 2>&1; then
   pass "formatted"
 else
   fail "dart format would change files — run: dart format ."
@@ -339,26 +291,6 @@ check_pattern "no commented-out code" warn \
   "$EX_GENERATED|$EX_TEST" \
   "  // final dead = 1;"
 
-check_pattern "no hardcoded colors in widget code" "$TOKEN_SEV" \
-  'Color\(0x|[^a-zA-Z0-9_.]Colors\.[a-z]' \
-  "$EX_GENERATED|$EX_TEST|$EX_THEME|Colors\.transparent" \
-  "      color: Color(0xFFAABBCC),"
-
-check_pattern "no numeric EdgeInsets" "$TOKEN_SEV" \
-  'EdgeInsets\.(all|symmetric|only|fromLTRB)\([^)]*[0-9]' \
-  "$EX_GENERATED|$EX_TEST|$EX_THEME" \
-  "      margin: EdgeInsets.all(12),"
-
-check_pattern "use EdgeInsetsDirectional (start/end, not left/right)" "$RTL_SEV" \
-  'EdgeInsets\.(only|fromLTRB)\([^)]*(left|right):' \
-  "$EX_GENERATED|$EX_TEST" \
-  "      padding: EdgeInsets.only(left: 16, right: 8),"
-
-check_pattern "no hardcoded radii" "$TOKEN_SOFT_SEV" \
-  'BorderRadius\.circular\([0-9]' \
-  "$EX_GENERATED|$EX_TEST|$EX_THEME" \
-  "      borderRadius: BorderRadius.circular(8),"
-
 # Force-unwrap: `x!.foo`, `x!,`, `x!)`, `x!;`. The `!=` operator is excluded because
 # `=` is not in the trailing set. Warn rather than block — the token file's
 # `Theme.of(context).extension<AppTokens>()!` is a legitimate use.
@@ -367,20 +299,10 @@ check_pattern "force-unwrap needs a comment justifying it" warn \
   "$EX_GENERATED|$EX_TEST" \
   "      return Text(balance!.trim());"
 
-check_pattern "user-facing strings belong in ARB files" "$STRING_SEV" \
-  'Text\([[:space:]]*.[^'"'"'"]*[[:space:]][^'"'"'"]*.[[:space:]]*[,)]' \
-  "$EX_GENERATED|$EX_TEST|$EX_L10N" \
-  "      child: Text('Your current balance'),"
-
 check_pattern "no committed credentials" block \
   '(api[_-]?key|apiKey|secret|password|access[_-]?token)[[:space:]]*[:=][[:space:]]*.[A-Za-z0-9_/+-]{16}|https?://[^[:space:]"'"'"']*:[^[:space:]"'"'"']*@' \
   "$EX_TEST" \
   "    final apiKey = 'sk_live_abcdef0123456789';"
-
-check_pattern "no inline TextStyle in widget code" "$TOKEN_SOFT_SEV" \
-  '[^a-zA-Z0-9_.]TextStyle\(' \
-  "$EX_GENERATED|$EX_TEST|$EX_THEME" \
-  "      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),"
 
 # ---------------------------------------------------------------- reuse and assets
 
@@ -390,40 +312,15 @@ section "Reuse and assets"
 # `flutter analyze` says nothing about it, and a test that never renders that screen says
 # nothing either, so it reaches review looking like working code. This is the one check
 # here that is a fact rather than a convention.
-check_assets() {
-  local hits line loc path missing="" count=0
-  hits=$(grep -HnoE "\.asset\([[:space:]]*['\"][^'\"\$]+['\"]" "${FILES[@]}" 2>/dev/null)
-
-  if [ -z "$hits" ]; then
-    pass "no literal asset paths in scope"
-    return
-  fi
-
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    loc=$(printf '%s' "$line" | sed -E 's|^(.*\.dart:[0-9]+):.*|\1|')
-    path=$(printf '%s' "$line" | sed -E "s|.*\.asset\([[:space:]]*['\"]||; s|['\"]\$||")
-    # A `packages/<name>/...` path resolves inside another package, not this checkout.
-    case "$path" in
-      packages/*) continue ;;
-    esac
-    if [ ! -f "$path" ]; then
-      count=$((count + 1))
-      missing="${missing}    $loc -> $path"$'\n'
-    fi
-  done <<EOF
-$hits
-EOF
-
-  if [ "$count" -eq 0 ]; then
-    pass "every referenced asset exists on disk"
-  else
-    warn "asset paths that do not resolve ($count) — these throw at runtime, not at compile time"
-    printf '%s' "$missing" | head -8
-    [ "$count" -gt 8 ] && printf '    ... and %s more\n' "$((count - 8))"
-  fi
-}
-check_assets
+SYNTAX_OUT=$(python3 "$TOOLS_DIR/syntax_checks.py" "$DART_ENTRY" "$TOKEN_SEV" "$TOKEN_SOFT_SEV" "$RTL_SEV" "$STRING_SEV" "${FILES[@]}")
+SYNTAX_STATUS=$?
+printf '%s\n' "$SYNTAX_OUT"
+case "$SYNTAX_STATUS" in
+  0) ;;
+  1) fail "Dart syntax checks found blocking conventions (details above)" ;;
+  *) die "Dart syntax checks could not run" ;;
+esac
+case "$SYNTAX_OUT" in *"WARN:"*) warn "Dart syntax checks reported advisory findings (details above)" ;; esac
 
 # The second PrimaryButton. Correct, tested, redundant, and invisible in review because
 # the diff is all additions.
@@ -501,7 +398,7 @@ fi
 
 GOLDEN_CHANGES=""
 if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-  GOLDEN_CHANGES=$(git diff --name-only --diff-filter=ACM HEAD 2>/dev/null | grep 'goldens/.*\.png$')
+  GOLDEN_CHANGES=$(git diff --relative --name-only --diff-filter=ACMR "${BASE_REF:-HEAD}" -- . 2>/dev/null | grep 'goldens/.*\.png$')
 fi
 if [ -n "$GOLDEN_CHANGES" ]; then
   warn "golden images changed — confirm each was opened and visually reviewed:"
@@ -513,7 +410,7 @@ fi
 section "Dependencies"
 NEW_DEPS=""
 if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-  NEW_DEPS=$(git diff -U0 HEAD -- pubspec.yaml 2>/dev/null \
+  NEW_DEPS=$(git diff -U0 "${BASE_REF:-HEAD}" -- pubspec.yaml 2>/dev/null \
     | grep -E '^\+[[:space:]]+[a-z0-9_]+:' | grep -v '^+++')
 fi
 if [ -n "$NEW_DEPS" ]; then

@@ -1,6 +1,6 @@
 {
   "name": "flutter-design-fidelity",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Keeps Flutter implementation matching the design. Enforces design tokens over hardcoded values, translates Figma Auto Layout into Row and Column rather than Stack, runs a screenshot diff loop instead of accepting the first render, and freezes the result in golden tests.",
   "author": {
     "name": "Mohamed Draz",

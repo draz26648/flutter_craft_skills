@@ -9,6 +9,9 @@
 set -uo pipefail
 
 GATE="$(cd "$(dirname "$0")/.." && pwd)/plugins/flutter-code-quality/skills/review-gate/scripts/check.sh"
+FLUTTER_GATE_TOOLS="$(dirname "$GATE")"
+export FLUTTER_GATE_TOOLS
+bash "$FLUTTER_GATE_TOOLS/prepare.sh" >/dev/null || exit 2
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -59,6 +62,8 @@ new_project() {
 echo "== project with known violations =="
 PROJ="$(new_project violations)" || { echo "flutter create failed"; exit 2; }
 
+mkdir -p "$PROJ/.agents"
+printf 'tokens: theme_extension\nlocales: [en, ar]\nstrictness: block\n' > "$PROJ/.agents/flutter-profile.yaml"
 mkdir -p "$PROJ/lib/core/theme" "$PROJ/lib/features/wallet/presentation"
 
 # Literal colors and numbers are CORRECT here. Flagging them would make the gate lie.
@@ -188,10 +193,10 @@ BASE_OUT="$(run_profiled)"
 # profile and no assertion below can distinguish a profile effect from a formatting one.
 expect_absent "$BASE_OUT" "FAIL: dart format" "profile fixture is format-clean"
 expect_absent "$BASE_OUT" "FAIL: flutter analyze" "profile fixture is analyzer-clean"
-expect_exit "$(code_profiled)" 1 "no profile: hardcoded values still block"
-expect_contains "$BASE_OUT" "defaults (no .agents/flutter-profile.yaml)" "no profile: says so in the header"
-expect_contains "$BASE_OUT" "FAIL: no hardcoded colors" "no profile: colors block"
-expect_contains "$BASE_OUT" "FAIL: use EdgeInsetsDirectional" "no profile: RTL blocks with locales undeclared"
+expect_exit "$(code_profiled)" 0 "no profile: conventions are advisory"
+expect_contains "$BASE_OUT" "advisory discovery (no .agents/flutter-profile.yaml)" "no profile: says so in the header"
+expect_contains "$BASE_OUT" "WARN: no hardcoded colors" "no profile: colors are advisory"
+expect_contains "$BASE_OUT" "WARN: use EdgeInsetsDirectional" "no profile: undeclared RTL is advisory"
 
 # Existing Claude profiles remain supported, but the provider-neutral .agents file wins
 # if a project contains both.
@@ -200,7 +205,7 @@ printf 'tokens: none\n' > "$PP/.claude/flutter-profile.yaml"
 LEGACY_OUT="$(run_profiled)"
 expect_contains "$LEGACY_OUT" ".claude/flutter-profile.yaml" "legacy Claude profile is discovered"
 expect_contains "$LEGACY_OUT" "skipped: no hardcoded colors" "legacy Claude profile is applied"
-write_profile 'tokens: theme_extension'
+write_profile $'tokens: theme_extension\nstrictness: block'
 PREFERRED_OUT="$(run_profiled)"
 expect_contains "$PREFERRED_OUT" ".agents/flutter-profile.yaml" ".agents profile takes precedence"
 expect_contains "$PREFERRED_OUT" "FAIL: no hardcoded colors" ".agents profile controls the verdict"
@@ -228,7 +233,7 @@ expect_absent   "$TO_OUT" "FAIL: no hardcoded colors" "tokens: theme_only does n
 write_profile 'locales: [en]'
 L_OUT="$(run_profiled)"
 expect_contains "$L_OUT" "WARN: use EdgeInsetsDirectional" "locales: [en] downgrades the RTL check"
-write_profile 'locales: [en, ar]'
+write_profile $'locales: [en, ar_EG]\nstrictness: block'
 LA_OUT="$(run_profiled)"
 expect_contains "$LA_OUT" "FAIL: use EdgeInsetsDirectional" "an RTL locale keeps the RTL check blocking"
 

@@ -297,7 +297,8 @@ SPACE_CACHE="$SPACE_REPO/plugins/flutter-design-fidelity/skills/visual-verificat
 mkdir -p "$SPACE_REPO"
 cp "$INSTALLER" "$SPACE_REPO/install.sh"
 cp -R "$ROOT/plugins" "$SPACE_REPO/"
-mkdir -p "$SPACE_CACHE/__pycache__"
+mkdir -p "$SPACE_CACHE/__pycache__" "$SPACE_CACHE/.dart_tool"
+: > "$SPACE_CACHE/.dart_tool/package_config.json"
 : > "$SPACE_CACHE/__pycache__/x.pyc"
 : > "$SPACE_CACHE/stray.pyc"
 # Skill names may carry digits, so a link to one must still be localised.
@@ -316,12 +317,13 @@ expect_skills "$SPACE_PROJECT/.claude/skills" \
 expect_skills "$SPACE_HOME/.claude/skills" \
   "machine-scoped skills install into a path with spaces" $PERSONAL_SKILL_NAMES
 CACHES="$(find "$SPACE_PROJECT/.claude/skills" "$SPACE_HOME/.claude/skills" \
-  \( -name __pycache__ -o -name '*.pyc' \) 2>/dev/null)"
+  \( -name __pycache__ -o -name '*.pyc' -o -name .dart_tool \) 2>/dev/null)"
 if [ -z "$CACHES" ]; then
-  ok "Python caches are stripped from installed skills"
+  ok "Python and Dart caches are stripped from installed skills"
 else
-  bad "Python caches are stripped from installed skills (found: $CACHES)"
+  bad "Python and Dart caches are stripped from installed skills (found: $CACHES)"
 fi
+expect_file "$SPACE_CACHE/.dart_tool/package_config.json" "Dart cache in source tree is left alone"
 expect_file "$SPACE_CACHE/__pycache__/x.pyc" "caches in the source tree are left alone"
 expect_contains "$DIGIT_LINK" "../l10n-2/references/flutter-profile.md" \
   "the source copy links to a sibling whose name has a digit"

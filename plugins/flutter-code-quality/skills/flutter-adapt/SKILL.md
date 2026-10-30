@@ -1,6 +1,6 @@
 ---
 name: flutter-adapt
-description: Inspect a Flutter project and generate its agent profile and codebase conventions so the Flutter skills follow the project's actual stack, structure, components, tokens, assets, and naming. Run it only when the user explicitly asks to adapt the Flutter skills to this project or to regenerate the profile — it writes files, so it is never started on the agent's own initiative.
+description: "Inspect a Flutter project and create or regenerate its agent profile and conventions when explicitly requested. Preserve existing user decisions."
 allowed-tools: Read, Grep, Glob, Bash, Write
 disable-model-invocation: true
 ---
@@ -29,13 +29,15 @@ first for the field list and the meaning of each value. Do not invent values out
 dependency in `pubspec.yaml` is weak evidence on its own — packages linger long after the
 code stops using them. Confirm in `lib/`.
 
-**Say when you do not know.** A field you cannot determine is written with its default
-and marked `# UNCERTAIN`, with what you would need to resolve it. A confidently wrong
+**Say when you do not know.** Omit fields you cannot determine and add a comment with
+the evidence needed to resolve them. Do not encode uncertainty as an enforceable default. A confidently wrong
 profile is worse than no profile, because the skills then enforce the wrong conventions
 with no sign anything is off.
 
-**Never overwrite silently.** Whatever file you are about to change, read it first, show a
-diff of what you would change and why, and ask before writing. Where the result goes
+**Preserve user decisions.** Read existing files first. An explicit request to create or
+regenerate authorizes that work; do not ask again before an ordinary authorized write.
+Preserve manual choices and explain changes. Ask only to resolve a material conflict or
+to perform a migration/deletion outside the requested scope. Where the result goes
 depends on what already exists:
 
 | Already there | Write to |
@@ -71,15 +73,13 @@ the code. This skill describes the project; it does not reform it.
    | `l10n` | `generate: true` plus `.arb` files or `l10n.yaml` → `arb`; `easy_localization` → `easy_localization`; `slang` → `slang`; otherwise `none` |
    | `locales` | `.arb` filename suffixes (`app_ar.arb` → `ar`), or `supportedLocales` in the `MaterialApp` |
 
-4. `strictness` cannot be inferred. Default it to `block` and tell the user this: on a
-   large codebase adopting these skills partway through its life, `warn` is usually the
-   right first setting, because a gate that blocks on day one is switched off on day two.
-   Offer to run the review gate once so they can see the volume before deciding.
+4. Preserve explicit `strictness`; for a new profile use `warn` and explain that
+   convention rules are advisory while analyzer, formatter, tests and detected secrets
+   still block. Do not infer strictness from repository size.
 
-5. Where two stacks both appear — `provider` and `riverpod`, or `bloc` and `setState` —
-   count the usages in `lib/` and report both numbers. Write the majority, mark it
-   `# UNCERTAIN`, and say plainly that a migration in progress needs a human to say which
-   direction is the intended one. Do not pick the newer package because it is newer.
+5. When stacks coexist, inspect the affected feature and any migration instructions.
+   Local setState is compatible with Bloc/Riverpod. If the intended shared stack remains
+   ambiguous, omit the field and record the uncertainty; a majority count is not intent.
 
 6. Print a table of field, value, and evidence. Then write the file.
 
@@ -96,7 +96,7 @@ routing: go_router     # go_router 14.6.2, lib/core/router/app_router.dart
 tokens: theme_extension   # ThemeExtension<AppTokens> in lib/core/theme/app_tokens.dart
 l10n: arb              # generate: true, 3 .arb files under lib/l10n
 locales: [en, ar]      # app_en.arb, app_ar.arb
-strictness: block      # default — see note below
+strictness: warn       # initial adoption; preserve an explicit existing setting
 ```
 
 Then, in your reply and not in the file:
@@ -185,5 +185,5 @@ Keep it under about 60 lines. It is read on every code-writing task, and a long 
 skimmed exactly where the specifics are.
 
 If `.agents/flutter-conventions.md` or `.claude/flutter-conventions.md` already exists,
-diff and ask before overwriting, and choose the directory by the same table as the
+preserve manual decisions, report changes, and choose the directory by the same table as the
 profile. Keep both generated files in the same directory.

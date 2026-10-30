@@ -1,6 +1,6 @@
 ---
 name: a11y-and-rtl
-description: Accessibility and right-to-left requirements that design files never specify — directional insets, mirrored icons, text scaling to 2.0 without overflow, semantics labels, touch target minimums, and contrast. Use this on any user-facing widget, any hardcoded string, any icon, any directional padding, and any app that ships Arabic, Hebrew, Farsi, or Urdu. Trigger it on every UI task without waiting to be asked, because these requirements live entirely on the implementer's side, are absent from every design handoff, and are discovered by users rather than by review.
+description: "Implement or review Flutter semantics, keyboard access, text scaling, localization, and RTL behavior for affected user-facing controls."
 ---
 
 # Accessibility and RTL
@@ -29,7 +29,8 @@ padding: const EdgeInsetsDirectional.only(start: 16, end: 8)
 ```
 
 The same applies to `AlignmentDirectional`, `BorderRadiusDirectional`, and
-`PositionedDirectional`. Use `start` and `end`, never `left` and `right`.
+`PositionedDirectional`. Use `start` and `end` for logical direction. Physical coordinates remain appropriate
+for a deliberately non-mirroring canvas or diagram; document that intent.
 
 **Icons that mirror, and icons that do not.** This is the part that requires judgement:
 
@@ -50,8 +51,8 @@ they exist.
 runs into bidirectional text handling. Test with real content, not lorem ipsum — bidi
 bugs only appear with mixed-script strings.
 
-**Test RTL explicitly.** Every widget test gets an RTL variant, or the mirroring is
-verified by nobody.
+**Test RTL where applicable.** Cover changed directional layouts and representative
+screens when an RTL locale ships. Do not duplicate every nonvisual widget test.
 
 ## Text scaling
 
@@ -64,9 +65,14 @@ common accessibility failure in Flutter apps and it is entirely preventable.
 - Buttons grow with their label. A fixed-height button clips its text at 1.5x.
 - Test at 1.0 and 2.0 in goldens.
 
-Never clamp the scale factor globally to "protect the layout". That overrides an
-accessibility setting the user deliberately chose, and on iOS it is grounds for review
-rejection.
+Avoid globally clamping the user’s text scale to conceal layout defects. Test content
+at the supported platform scaling settings; 2.0 is a useful test case, not a universal cap.
+
+## Keyboard and focus
+
+Use built-in controls where possible. Verify Tab order, visible focus, Enter/Space
+activation, and focus restoration after dialogs on supported desktop/web targets. Avoid
+adding duplicate semantics labels to controls that already expose accessible names.
 
 ## Semantics
 
@@ -80,7 +86,7 @@ rejection.
 
 ```dart
 Semantics(
-  label: 'Transfer funds',
+  label: localizedTransferLabel, // resolve using the project’s l10n system
   button: true,
   child: IconButton(icon: const Icon(Icons.send), onPressed: onTransfer),
 )
@@ -97,8 +103,9 @@ usual failure — they are chosen for aesthetics on white and fail against a rai
 
 ## Localization
 
-No hardcoded user-facing strings. Every string goes through ARB files, including error
-messages, empty states, and semantics labels. Semantics labels are read aloud, so an
+Use the project’s configured localization system for user-facing strings, including
+errors, empty states, and semantics labels: ARB, easy_localization, or slang. Under
+`l10n: none`, literals are permitted; do not introduce localization tooling implicitly. Semantics labels are read aloud, so an
 untranslated one is read in the wrong language.
 
 Never concatenate translated fragments. Word order differs between languages; use

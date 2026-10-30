@@ -1,6 +1,6 @@
 {
   "name": "flutter-code-quality",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Flutter architecture and quality conventions, adapted to your stack through a project profile. Layering with a pure Dart domain, state rules for Bloc, Cubit and Riverpod, responsive layout, accessibility and RTL requirements that design files never specify, performance rules, and a read-only pre-commit review gate.",
   "author": {
     "name": "Mohamed Draz",

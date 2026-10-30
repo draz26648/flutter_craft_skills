@@ -1,4 +1,4 @@
 # Codex counterpart of `disable-model-invocation: true` in SKILL.md: this skill writes
-# files, so it runs only when the user invokes $flutter-adapt.
+# files as an explicit setup workflow; preserve this invocation policy.
 policy:
   allow_implicit_invocation: false

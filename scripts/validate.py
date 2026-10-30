@@ -26,7 +26,7 @@ NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # A skill may address its own resources or another skill bundled beside it.
 RESOURCE_REF_RE = re.compile(
-    r"(?<![A-Za-z0-9_.-])((?:\.\./[A-Za-z0-9_.-]+/)?(?:scripts|references)/[A-Za-z0-9_.-]+)"
+    r"(?<![A-Za-z0-9_.-])((?:\.\./[A-Za-z0-9_.-]+/)?(?:scripts|references)/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+)"
 )
 
 # A `../` reference only resolves while the sibling skill is installed beside this one. The
@@ -123,7 +123,7 @@ def check_links(md: Path, body: str, skill_dir: Path) -> None:
         )
 
     for ref in RESOURCE_REF_RE.findall(body):
-        if not (skill_dir / ref).is_file():
+        if not (skill_dir / ref).exists():
             error(f"{rel(md)}: references '{ref}' which does not exist")
         if ref.startswith("../") and not LOCALISABLE_REF_RE.fullmatch(ref):
             error(
@@ -195,6 +195,16 @@ def check_skill(skill_dir: Path) -> str | None:
             error(f"{rel(md)}: description is {n} chars, over the {DESCRIPTION_HARD_LIMIT} limit")
         elif n > DESCRIPTION_SOFT_LIMIT:
             warn(f"{rel(md)}: description is {n} chars, over the {DESCRIPTION_SOFT_LIMIT} soft limit")
+
+    # Explicit invocation must agree on both hosts; unsupported frontmatter alone
+    # cannot enforce Codex invocation policy.
+    explicit = fields.get("disable-model-invocation") == "true"
+    host_policy = skill_dir / "agents" / "openai.yaml"
+    codex_explicit = host_policy.is_file() and bool(re.search(
+        r"^\s*allow_implicit_invocation:\s*false\s*$", host_policy.read_text(), re.MULTILINE
+    ))
+    if explicit != codex_explicit:
+        error(f"{rel(md)}: Claude and Codex implicit invocation policies disagree")
 
     check_links(md, md.read_text(encoding="utf-8"), skill_dir)
 

@@ -1,6 +1,6 @@
 ---
 name: figma-to-widget
-description: The translation contract from Figma structures to Flutter widgets — Auto Layout to Row and Column, constraints to Flexible or fixed sizing, absolute positioning to Stack. Use this whenever a Figma link, frame, design file, mockup, or screenshot is mentioned, whenever asked to build or implement a screen or component from a design, and whenever design specs need to become widget code. Trigger it even when the request is casual ("build this screen", "make it look like the design") because the default translation an agent produces without this skill uses Stack and hardcoded offsets, which breaks on every device that is not the artboard width.
+description: "Implement Flutter UI from a Figma frame or supplied design image, preserving layout intent and reusing project components. Not for unrelated mentions of Figma."
 ---
 
 # Figma to Widget
@@ -21,8 +21,9 @@ and breaks on every other screen size. Figma's layout system maps cleanly onto F
 
 Check whether a connected Figma tool is available. If it is, pull the frame directly and
 read real values. If it is not, say so before starting: without direct Figma access,
-every value is being read off a rasterized image and is a guess. Ask for the design
-tokens, a Dev Mode inspection export, or the spacing scale rather than guessing silently.
+every value is being read off a rasterized image and is a guess. Use supplied screenshots as visual evidence, label inferred values, and implement what
+is unambiguous. Request missing specs only when necessary; absence of Figma is not a
+reason to block a screenshot-based task or claim measured values.
 
 ## The mapping
 
@@ -34,7 +35,7 @@ tokens, a Dev Mode inspection export, or the spacing scale rather than guessing 
 | Auto Layout padding | `Padding` with a directional token |
 | Space between | `MainAxisAlignment.spaceBetween` |
 | Hug contents | `MainAxisSize.min` |
-| Fill container | `Expanded`, or `double.infinity` on a single child |
+| Fill container | `Expanded` inside a bounded Flex; otherwise constraints appropriate to the parent |
 | Fixed width/height | `SizedBox`, only when the design truly requires it |
 | Absolute position | `Stack` + `Positioned` — last resort only |
 | Frame with clip | `ClipRRect` with a radius token |
@@ -68,13 +69,14 @@ variants becomes one widget with a state parameter — not four widgets.
 ## Workflow
 
 1. Pull the frame and identify its layer tree.
-2. List every distinct visual value in it. Resolve each against the token set. Report
-   anything unmatched before writing code.
+2. Resolve values through the configured theme/token source. For tokens: none, inline
+   values are valid. Label uncertain measurements and resolve consequential ambiguity.
 3. Identify which layers are instances of existing components. Search the codebase for
    each. Reuse.
 4. Write the widget tree following the mapping table above.
-5. Hand off to the visual-verification skill. Do not declare the screen done on the
-   basis that it compiled.
+5. For substantial visual work, use visual-verification when capture and reference
+   inputs exist. Otherwise run applicable layout/widget checks and report the missing
+   visual comparison. Do not claim a pixel match without evidence.
 
 ## Common mistakes
 

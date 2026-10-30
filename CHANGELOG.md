@@ -9,6 +9,39 @@ Versioning follows semver from the *consumer's* point of view. A check that star
 failing a project that previously passed is a breaking change, even though nothing about
 the project changed — the gate's verdict is the contract.
 
+## 3.0.0
+
+### Changed
+
+- Missing profile fields now mean discovery for agents and advisory convention checks
+  for the gate. No implicit Bloc/Freezed/GetIt migration. New adaptation profiles use
+  warn, retain manual decisions, and omit uncertain fields.
+- Shared instructions honor tokens: none, theme_only, constants and each localization
+  system. Descriptions and verification scope are narrower; small edits do not require
+  a full golden/screenshot workflow.
+- Riverpod examples distinguish 2.x/3.x APIs; lifecycle examples test disposal,
+  invalidation and latest-request-wins behavior. Corrected opacity and rebuild guidance.
+
+### Added
+
+- A separate Dart analyzer/YAML helper package for the gate. Requires Dart >=3.9,
+  Python 3 and a one-time dart pub get inside the skill's scripts/dart_checks directory.
+- YAML validation for all fields, quoted values, block lists, duplicates and locale
+  subtags. Syntax checks handle multiline expressions and ignore comments as code.
+- Untracked/renamed Dart files, monorepo-relative scope, --base for PRs, and honest empty
+  scope. These can surface defects previously missed, so this is a major release.
+- A portable widget-test PNG capture helper and setup guide; it does not claim device
+  or platform-view fidelity. Executable checks cover capture dimensions and pixels.
+- Opt-in live host evaluation for Codex and Claude Code with identical task fixtures,
+  independent Flutter tests, protected-file checks, and saved reports.
+
+### Upgrade
+
+Prepare the gate helper dependencies after updating. Review profile settings before
+relying on blocking house conventions: unspecified settings are now advisory. Existing
+explicit block settings remain effective; formatting, analysis, tests and detected
+credentials still block. No account-wide settings or application dependencies are changed.
+
 ## 2.2.0
 
 Codex support, additive. A project that passed the review gate under 2.1.0 still passes.

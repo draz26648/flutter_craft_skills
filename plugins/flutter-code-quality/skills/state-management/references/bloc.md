@@ -1,6 +1,6 @@
 # Bloc and Cubit
 
-Read this when the profile says `state: bloc`, or when there is no profile. The four
+Read this when the profile or source evidence identifies Bloc/Cubit. The four
 rules in `SKILL.md` are the contract; this is what they look like in Bloc.
 
 Prefer Cubit. Reach for Bloc when the feature genuinely benefits from events as a
@@ -55,8 +55,10 @@ Future<void> load() async {
 }
 ```
 
-`isClosed` after every `await` that precedes an `emit`. Not the first one only — after
-each of them, if there are several.
+For Cubit, check `isClosed` after awaited work before emitting. For Bloc event handlers,
+await all async work and check the handler emitter’s `emit.isDone` before later emissions.
+A liveness guard does not prevent an older request overwriting newer results: use request
+identity/cancellation for Cubit and an appropriate event transformer for Bloc.
 
 ## Rebuild scope
 

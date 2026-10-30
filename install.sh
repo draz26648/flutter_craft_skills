@@ -118,7 +118,7 @@ localise_profile_link() {
 
 # A working clone can hold untracked Python caches. Drop them from the copy only.
 strip_caches() {
-  find "$1" -type d -name __pycache__ -prune -exec rm -rf {} +
+  find "$1" -type d \( -name __pycache__ -o -name .dart_tool \) -prune -exec rm -rf {} +
   find "$1" -type f -name '*.pyc' -exec rm -f {} +
 }
 

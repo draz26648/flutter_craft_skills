@@ -1,18 +1,20 @@
 ---
 name: state-management
-description: "State-management conventions — state shape, safe updates after an await, narrow rebuild scope, and the test pattern — resolved against whichever stack the project uses: Bloc, Cubit, Riverpod, Provider, signals, or plain setState. Use this whenever writing or modifying any Cubit, Bloc, Notifier, provider, or state class, whenever wiring a widget to state, whenever a rebuild or setState question comes up, and whenever adding tests for state logic. Trigger it on any task that touches presentation logic, since updating state after disposal and over-broad rebuild scope are the two most common causes of crashes and jank in an otherwise correct implementation."
+description: "Implement or review Flutter state transitions, async lifecycle safety, subscriptions, and state tests using the existing stack and resolved package versions."
 ---
 
 # State Management
 
 > **Profile first.** Read `.agents/flutter-profile.yaml` in the project root, falling
 > back to legacy `.claude/flutter-profile.yaml`, and take the
-> stack from `state`. With no profile, assume `state: bloc`, `models: freezed`.
+> stack from `state`. With no profile or field, inspect the affected feature and
+> dependencies; do not introduce Bloc or Freezed by default. Read resolved versions
+> before selecting APIs. Local setState can coexist with a feature state library.
 > Then read the reference for that stack before writing code:
 >
 > | `state` | Read |
 > |---|---|
-> | `bloc` (default) | `references/bloc.md` |
+> | `bloc` | `references/bloc.md` |
 > | `riverpod` | `references/riverpod.md` |
 > | `provider`, `signals`, `setstate` | Neither — apply the four rules below directly, using the translation table at the bottom |
 >
@@ -27,8 +29,10 @@ for them looks like.
 
 ## 1. State shape: one type, exhaustively switchable
 
-One state type per feature, expressed as a union of the states that can actually exist —
-not a single class with nullable fields covering every case at once. A
+Use sealed alternatives for mutually exclusive states. Keep immutable data-class state
+for independent fields, forms, or retained data during refresh. Do not force a union onto
+a checkbox or rewrite a valid existing state model. Avoid impossible combinations in a
+class with many nullable fields. A
 nullable-everything state makes every widget check three fields to work out what to
 render, and the compiler stops helping.
 
@@ -71,7 +75,9 @@ pumping one.
 
 ## Testing
 
-Every public method on a state holder gets at least a success case and a failure case.
+Test observable transitions for changed behavior: success and failure for fallible
+operations, disposal and out-of-order completion for overlapping async operations. A
+synchronous setter does not need an invented failure case.
 The failure path is the one that ships broken, because it is the one nobody clicks
 through manually.
 
@@ -88,11 +94,9 @@ checks the endpoint passes anyway.
 | Side effects | listener outside `build` | `effect` | after the `await`, not in `build` |
 | Test entry point | construct the notifier directly | read the signal | `testWidgets` + `pumpWidget` |
 
-`setstate` is a legitimate answer for genuinely local state — a checkbox, an expansion
-tile, a form field's focus. It is not an answer for anything that outlives the widget or
-is read by a sibling. If a project's profile says `setstate` and you are about to lift
-state to an ancestor to share it, that is the moment to say the project has outgrown the
-setting, rather than quietly introducing a second stack.
+`setstate` is legitimate for local state and state lifted to a suitable common ancestor.
+Use the existing shared-state mechanism when lifetime or complexity warrants it; lifting
+a checkbox value does not by itself justify a new dependency.
 
 ## Common mistakes, every stack
 

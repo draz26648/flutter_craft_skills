@@ -1,6 +1,6 @@
 ---
 name: golden-tests
-description: Conventions for Flutter golden tests as a design-fidelity guard — multi-device sets, theme and locale coverage, and the rule that regenerated goldens require visual review before commit. Use this whenever adding or modifying a widget, whenever a test fails with a golden mismatch, whenever asked to add tests for UI, and whenever a screen has just been verified against a design. Trigger it proactively after finishing UI work, because a screen that matches the design today drifts within weeks unless the match is frozen in a test.
+description: "Add or review Flutter visual regression tests for stable, significant UI states; investigate golden mismatches. Do not add goldens for every small widget edit."
 ---
 
 # Golden Tests
@@ -13,7 +13,9 @@ description: Conventions for Flutter golden tests as a design-fidelity guard —
 > `../design-tokens/references/flutter-profile.md`, relative to this skill directory.
 
 Visual verification proves a screen matches today. Goldens are what stop it drifting
-tomorrow. Every widget that renders something visible gets one.
+tomorrow. Add coverage for stable shared components and significant screen states,
+using the existing test framework. Small edits usually need the affected existing test,
+not a new golden suite. If the project has no goldens, justify setup against the task.
 
 ## Structure
 
@@ -34,15 +36,21 @@ Each golden test covers the axes that actually break layouts:
 
 - **Devices** — one small phone (360x640), one large phone (430x932), one tablet if the
   app supports it
-- **Themes** — light and dark
+- **Themes** — supported themes (light and dark only when both ship)
 - **Text scale** — 1.0 and 2.0
 - **Locale and direction** — LTR and RTL if the app ships Arabic or Hebrew
 
 Full cross-product is too many images to review. Cover 1.0/light/LTR on every device,
-then one variant each for dark, 2.0 text scale, and RTL. That catches the real failures
+then relevant variants for supported dark mode, 2.0 text scale, and RTL. That catches the real failures
 without generating sixty files nobody looks at.
 
 ## Writing one
+
+The example below uses golden_toolkit APIs. Use it only when that package already
+exists and its resolved version supports them. Otherwise prefer Flutter’s built-in
+`matchesGoldenFile` and the project’s existing wrappers; do not add a dependency just
+to follow this example. Cover loading, error, and empty states where visually meaningful.
+
 
 ```dart
 void main() {

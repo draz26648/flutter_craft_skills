@@ -1,6 +1,6 @@
 ---
 name: responsive-adaptive
-description: Breakpoint rules and adaptive layout conventions for Flutter — LayoutBuilder for component decisions, MediaQuery for screen decisions, and the rule that the design artboard width is a reference and never a hardcoded target. Use this whenever writing layout code, whenever a RenderFlex overflow appears, whenever tablet or desktop or foldable support comes up, whenever a fixed pixel dimension is about to be written, and whenever a design only provides one artboard size. Trigger it on any layout task, because designs are delivered at a single width and code written to that width breaks everywhere else.
+description: "Implement or debug Flutter layout across available widths, keyboard insets, orientations, and text scaling. Use for layout changes or overflow."
 ---
 
 # Responsive and Adaptive Layout
@@ -16,8 +16,8 @@ from the artboard is a future overflow.
 | medium | 600–839 | small tablets, phones landscape, unfolded |
 | expanded | ≥ 840 | tablets, desktop |
 
-Define these once in `core/layout/breakpoints.dart`. Never inline a magic number
-comparison in a widget.
+Reuse existing breakpoint definitions. These are suggested defaults only when the
+project has none; place new definitions in its existing layout directory.
 
 ## Which tool for which decision
 
@@ -31,8 +31,7 @@ for the whole page, whether to show a modal or a side panel.
 
 Reading `MediaQuery.sizeOf(context)` inside a leaf widget is almost always the wrong tool.
 Note `sizeOf` rather than `MediaQuery.of(context).size` — the latter subscribes the widget
-to every MediaQuery change including keyboard appearance, causing rebuilds on every
-keystroke.
+to every MediaQuery change including keyboard appearance, causing rebuilds for unrelated MediaQuery changes.
 
 ## Rules
 
@@ -44,16 +43,16 @@ a fixed-height app bar.
 looks fine at the design width and breaks at 2.0 text scale. Let content determine height
 and constrain with `ConstrainedBox` where a maximum is genuinely needed.
 
-**Scroll by default.** Any screen that can plausibly overflow — which is any screen with
-more than three elements once text scale is raised — goes in a scroll view. Wrap fixed
-layouts in `SingleChildScrollView` with `physics: ClampingScrollPhysics()` rather than
-discovering the overflow on a small device.
+**Choose scrolling from content and constraints.** Use a scroll view for content that can
+exceed available height. Use lazy slivers/builders for long content. Do not wrap an
+existing scrollable blindly or put Expanded under unbounded scroll constraints. Preserve
+platform scroll physics unless the product requires an override.
 
-**Handle the keyboard.** `resizeToAvoidBottomInset` plus a scroll view, or the form
-disappears behind the keyboard on short screens.
+**Handle the keyboard.** Test forms with a visible keyboard on the smallest supported
+viewport. Account for viewInsets without applying the same inset twice.
 
-**Safe areas are not optional.** `SafeArea` on every screen, and mind that a bottom
-navigation bar needs the bottom inset while the content above it does not.
+**Own safe-area handling once.** Check whether Scaffold, navigation, or a parent already
+handles each inset. Apply SafeArea where needed; allow intentional edge-to-edge artwork.
 
 ## Orientation and foldables
 

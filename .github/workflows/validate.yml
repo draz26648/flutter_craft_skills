@@ -31,13 +31,15 @@ jobs:
           bash -n scripts/test_install_sh.sh
           bash -n scripts/test_check_sh.sh
           bash -n plugins/flutter-code-quality/skills/review-gate/scripts/check.sh
+          bash -n plugins/flutter-code-quality/skills/review-gate/scripts/prepare.sh
       - name: shellcheck
         run: |
           shellcheck \
             install.sh \
             scripts/test_install_sh.sh \
             scripts/test_check_sh.sh \
-            plugins/flutter-code-quality/skills/review-gate/scripts/check.sh
+            plugins/flutter-code-quality/skills/review-gate/scripts/check.sh \
+            plugins/flutter-code-quality/skills/review-gate/scripts/prepare.sh
       - name: Installer behaves
         run: bash scripts/test_install_sh.sh
 
@@ -57,17 +59,30 @@ jobs:
         run: |
           python3 -m py_compile scripts/validate.py
           python3 -m py_compile plugins/flutter-design-fidelity/skills/visual-verification/scripts/compare.py
+      - name: Git scope regression tests
+        run: python3 scripts/test_scope.py
       - name: compare.py behaves
         run: python3 scripts/test_compare.py
 
   gate:
     name: review-gate self-test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flutter: ['3.41.9', '3.47.8']
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.41.9
+          flutter-version: ${{ matrix.flutter }}
+      - name: Parser package and tests
+        working-directory: plugins/flutter-code-quality/skills/review-gate/scripts/dart_checks
+        run: |
+          dart pub get
+          dart analyze --fatal-infos
+          dart test
+      - name: Executable examples and capture harness
+        run: python3 scripts/test_flutter_examples.py
       - name: Run the gate against its fixture
         run: bash scripts/test_check_sh.sh

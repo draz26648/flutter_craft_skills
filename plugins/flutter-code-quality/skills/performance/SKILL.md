@@ -1,6 +1,6 @@
 ---
 name: performance
-description: Flutter performance rules — const constructors, RepaintBoundary placement, builder constructors for lists, image cache sizing, and keeping work out of build methods. Use this whenever implementing a list or grid, loading images, writing animations, investigating jank or dropped frames, or when any build method starts doing real work. Trigger it proactively on list and image code rather than waiting for a performance complaint, since the fixes are nearly free at authoring time and expensive to retrofit once the widget tree is built around the problem.
+description: "Diagnose Flutter jank, expensive rebuilds, image memory, or long-list performance. Use for relevant list/image changes or measured performance issues."
 ---
 
 # Performance
@@ -11,14 +11,15 @@ description: Flutter performance rules — const constructors, RepaintBoundary p
 
 Never inside `build()`: network calls, JSON parsing, sorting or filtering a large list,
 `DateTime.now()` formatting in a loop, regex compilation, or creating a controller.
-Move computation to the Cubit, memoize the result, and let build read it.
+Move computation to the existing state layer or a suitable service, cache only where
+useful, and let build read the result. Do not introduce Cubit into another stack.
 
-**`const` wherever possible.** A `const` widget is not rebuilt and not re-allocated. Turn
-on `prefer_const_constructors` in the lint rules so this is enforced rather than
-remembered.
+**`const` wherever possible.** Const instances can skip parent-driven updates when identical; state and inherited
+dependency changes can still rebuild their elements. Follow existing lint settings.
 
 **Extract widgets rather than helper methods.** A `Widget _buildHeader()` rebuilds with
-the parent every time. A separate `const HeaderWidget()` does not. This is the most
+the parent every time. A separate identical const instance can skip that parent-driven update, though state
+and inherited dependencies can still rebuild it. This is the most
 common and most impactful structural fix in a Flutter codebase.
 
 ## Lists
@@ -46,7 +47,8 @@ them where the repaint rainbow in DevTools shows something flashing that should 
 
 ## Images
 
-Always set `cacheWidth` or `cacheHeight` on network and asset images. Without it a
+For oversized raster images rendered at known bounds, set suitable `cacheWidth` or
+`cacheHeight` where the platform/decoder supports them. Preserve resolution for zooming. Without it a
 2000px image decodes at full size to fill a 100px avatar, holding roughly 16MB of memory
 for something that needs 40KB. On a scrolling list of avatars this is the difference
 between a smooth list and an out-of-memory crash on a mid-range Android device.
@@ -55,8 +57,8 @@ between a smooth list and an out-of-memory crash on a mid-range Android device.
 Image.network(url, cacheWidth: (100 * devicePixelRatio).round())
 ```
 
-Use `cached_network_image` for anything loaded repeatedly, and always provide a
-placeholder sized identically to the final image so the layout does not jump.
+Reuse the project’s image loader and caching policy. Add a disk-cache dependency only
+when requirements justify it. Reserve the final image bounds to prevent layout jumps.
 
 ## Animations
 
@@ -67,15 +69,17 @@ reversible, or driven by a gesture.
 Animate with `AnimatedBuilder` and a `child` parameter so the static subtree is built
 once rather than every frame.
 
-Never animate `Opacity` on a large subtree — it forces a saveLayer. Use `FadeTransition`
-or `AnimatedOpacity`, which are optimized for this.
+Prefer FadeTransition or AnimatedOpacity for opacity animation rather than rebuilding
+a large subtree every frame. Intermediate opacity can require offscreen compositing;
+measure raster cost rather than assuming an animation widget removes that cost.
 
 ## Profiling
 
 Profile in profile mode. Debug mode numbers are meaningless — the assertions and lack of
 AOT compilation make everything several times slower.
 
-In DevTools: the timeline for frames over 16ms, the repaint rainbow for unnecessary
+In DevTools: the timeline against the device refresh budget (about 16.7ms at 60Hz
+or 8.3ms at 120Hz), the repaint rainbow for unnecessary
 repaints, and the memory view for image cache growth during scrolling.
 
 Measure before optimizing. The bottleneck is regularly not where it seems, and a
@@ -84,7 +88,9 @@ restructure done on a guess costs a day and changes nothing.
 ## Common mistakes
 
 - `setState` on a whole screen when one small widget changed.
-- `Opacity(opacity: 0)` to hide something. Use `Visibility` or `Offstage` — an invisible
-  widget at zero opacity still lays out and paints.
+- `Opacity(opacity: 0)` still lays out and can receive hit tests, but does not paint
+  its child. Choose Visibility, Offstage, or IgnorePointer according to layout, focus,
+  semantics, and hit-testing requirements. See
+  https://api.flutter.dev/flutter/widgets/Opacity-class.html .
 - Rebuilding a `ScrollController` or `TextEditingController` in `build()`. They belong in
   `initState` and need disposing.

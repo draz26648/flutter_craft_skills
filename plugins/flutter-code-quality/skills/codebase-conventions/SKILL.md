@@ -1,6 +1,6 @@
 ---
 name: codebase-conventions
-description: "Makes generated code look like the code already in the repository — reuse the existing widget instead of building a second one, resolve typography and colours through the project's own source, reference only assets that exist and are declared, and match the file, class, and import naming already in use. Use this before writing any widget, any screen, any shared component, any Text style, and any asset reference, and whenever a task says \"add a screen\", \"build a component\", \"make it match the rest of the app\", or \"use our design system\". Trigger it on every code-writing task without waiting to be asked, because the default failure is invisible: the code compiles, looks reasonable in isolation, and quietly duplicates a component that already existed under a different name."
+description: "Find and reuse existing Flutter components, styles, assets, and naming conventions before adding or changing UI code."
 ---
 
 # Codebase Conventions
@@ -64,7 +64,8 @@ read an existing one. Those are the three reasons duplication actually happens.
 
 ## Typography
 
-Text styles come from the project's typography source. Never write `TextStyle(...)` inline
+Under `tokens: none`, inline TextStyle is allowed and no token layer is required.
+Otherwise text styles come from the project's typography source. Avoid `TextStyle(...)` inline
 in a widget — an inline style is invisible in review and is how a screen ends up two
 points off from every other screen.
 
@@ -97,10 +98,9 @@ Before referencing an asset:
    that exists but is undeclared fails the same way at runtime.
 3. Match the project's naming and directory convention — the conventions file records it.
 
-If the asset does not exist, say so and stop. Do not substitute a Material icon for a
-missing brand asset, and do not write the path you expect the designer to export later.
-A placeholder that looks plausible is worse than a blocked task, because the blocked task
-gets resolved and the placeholder ships.
+If a required brand asset is missing, report it and continue independent work. Use a
+clearly labelled placeholder only if the user authorized one; never invent a path or claim
+visual fidelity for a substituted asset.
 
 Use the project's existing loader. A project on `flutter_svg` uses `SvgPicture.asset` for
 SVGs; introducing a second image library for one icon is a dependency added by accident.

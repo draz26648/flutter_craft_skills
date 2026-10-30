@@ -3,7 +3,8 @@
 Read this when the profile says `state: riverpod`. The four rules in `SKILL.md` are the
 contract; this is what they look like in Riverpod.
 
-Examples use `riverpod_generator` (`@riverpod`), which is the current default. Without
+Check `pubspec.lock` first. The main examples target Riverpod 3.x and use
+`riverpod_generator` (`@riverpod`) only when the project already uses code generation. Without
 codegen the same shapes exist as `NotifierProvider` and `AsyncNotifierProvider` declared
 by hand — the rules are identical, only the declaration differs.
 
@@ -61,12 +62,19 @@ Future<void> submit(Transfer transfer) async {
 }
 ```
 
-If the project's Riverpod predates `ref.mounted`, keep a flag instead:
+Riverpod 2.x uses `valueOrNull` where 3.x uses `value`, and has no `ref.mounted`.
+Do not mix these APIs. For 2.x use a cancellation/lifecycle token scoped to each build
+and capture that token before awaiting. Invalidate it in `ref.onDispose`. A permanent
+`_disposed` field can stay true when a Notifier rebuilds; a flag simply reset in build can
+also admit a stale request. Track build/request identity as well as disposal.
 
-```dart
-var _disposed = false;
-// in build(): ref.onDispose(() => _disposed = true);
-```
+For either major, define whether overlapping requests are latest-wins, serialized, or
+ignored while in flight. Test reversed response order: mounted only proves liveness.
+Runnable 2.x and 3.x examples are in `references/riverpod_lifecycle.dart`; the repository
+fixture runner compiles and tests that source against both majors.
+
+API changes: https://riverpod.dev/docs/3.0_migration and
+https://riverpod.dev/docs/whats_new .
 
 `autoDispose` (the default under `@riverpod`) makes this sharply more likely to matter,
 not less: the provider is torn down as soon as the last listener leaves the screen, which
@@ -76,14 +84,15 @@ is exactly the navigate-away-mid-request case.
 
 ```dart
 final balance = ref.watch(
-  walletControllerProvider.select((s) => s.valueOrNull?.balance),
+  walletControllerProvider.select((s) => s.value?.balance),
 );
 ```
 
 `select` is the narrowing primitive (rule 3) — the widget rebuilds only when the selected
 value changes by `==`. Selecting an object without value equality selects nothing.
 
-`ref.listen` for side effects, in the widget, never in a provider:
+`ref.listen` in the widget for UI effects. Provider-to-provider listeners may be valid
+for non-UI coordination; keep navigation and snackbars in the widget:
 
 ```dart
 ref.listen(walletControllerProvider, (previous, next) {
@@ -112,11 +121,15 @@ test('refresh emits loading then data', () async {
   );
   addTearDown(container.dispose);
 
+  // Finish build() before refresh(), so initial loading cannot race with this test.
+  final subscription = container.listen(walletControllerProvider, (_, _) {});
+  addTearDown(subscription.close);
+  await container.read(walletControllerProvider.future);
   final states = <AsyncValue<WalletData>>[];
   container.listen(
     walletControllerProvider,
     (_, next) => states.add(next),
-    fireImmediately: true,
+    fireImmediately: false,
   );
 
   await container.read(walletControllerProvider.notifier).refresh();
@@ -131,7 +144,7 @@ test('refresh emits loading then data', () async {
 `addTearDown(container.dispose)` is not optional — a leaked container keeps its providers
 alive across tests and produces failures that only appear when the whole file runs.
 
-`container.listen` with `fireImmediately: true` records the sequence, which is what makes
+After awaiting initial load, `container.listen` records only refresh transitions, which makes
 this the equivalent of `blocTest`'s `expect` list. Reading only the final value passes on
 a controller that never emitted `loading`.
 
